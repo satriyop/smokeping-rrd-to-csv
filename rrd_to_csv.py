@@ -7,9 +7,14 @@ from pathlib import Path
 
 basepath = os.getcwd()
 basedir = os.listdir()
-# TODO : Change this as you wish
-csv_dir = 'csv_result'
 rrd_directories = []
+
+# TODO  : CHANGE THIS AS YOU WISH / Smokeping Setting
+csv_dir = 'csv_result'
+consolidation_function = ['MIN', 'MAX', 'AVERAGE'] 
+resolution = ['5m']
+start_time = "2021-04-20"
+end_time   = "2021-04-23"
 
 # Filter all directories and store in rrd_directories
 # All rrd files should inside the base directory
@@ -28,21 +33,47 @@ def write_to_csv(filename, header, rows):
 			row = [timestamp] + row_data
 			writer.writerow(row)
 
+def r_to_second(r):
+	r_sec = 0
+	if (r[-1] == 's'):
+		r_sec = int(r[:-1]) 
+	elif (r[-1] == 'm'):
+		r_sec = int(r[:-1]) * 60
+	elif (r[-1] == 'h'):
+		r_sec = int(r[:-1]) * 3600
+	return r_sec
+	
+
+def str_to_datetime(date):
+	return int(datetime.strptime(date, '%Y-%m-%d').timestamp())
+
 # Fetch data from RRD 
-def fetch_rrd(rrd_file, cf, resolution, start):
-	data = rrdtool.fetch(f"{rrd_file}", f"{cf}", "-a" , "-r",  f"{resolution}", "-s", f"{start}")
-	return data
+def fetch_rrd(rrd_file, cf, resolution, start, end):
+	r = r_to_second(resolution)
+
+	for t in range(start, end, r):
+		data = rrdtool.fetch(f"{rrd_file}", f"{cf}", "-a" , "-r",  f"{resolution}", "-s", f"{t}", "-e", f"{end}")
+		if (data[0][2] == r):
+			return rrdtool.fetch(f"{rrd_file}", f"{cf}", "-a" , "-r",  f"{resolution}", "-s", f"{t}", "-e", f"{end}")
+	return []
+
+
+	
+	
+
+
 
 def format_rows(data):
-	# consist of timestamped rows data
+	# consist of timestamped rows data {'timestamp': [value_1, value_2, etc]}
 	rows = {}
 	# database from RRA, without timestamp
 	rra	 = data[2]
 	# First timestamp for first row and will be increase as interval
 	timestamp 		= data[0][0] + data[0][2]
-	interval 		= data[0][2]
+	
 	# Arrange row data to dictionary based on timestamp
 	for row in rra:
+		interval 		= data[0][2]
 		unix_timestamp 	= timestamp + interval
 		human_timestamp = str(datetime.fromtimestamp(timestamp))
 		row_data 		= list(row)
@@ -73,21 +104,13 @@ create_csv_dir(csv_dir)
 for dir in rrd_directories:
 	files = Path(dir).glob("*rrd")	
 
-	for file in files:
-		# TODO  : CHANGE THIS AS YOU WISH
-		#change this start time per your data starting time
-		start_time = '20210401'
-
-		consolidation_function = ['MIN', 'MAX', 'AVERAGE'] 
-
-		# TODO : Change the resolution time as needed
-		resolution = ['5m', '1h', '12h']
+	for file in files:		
 		base_name = os.path.basename(file).split('.')[0]
 
 		for cf in consolidation_function:
 			for r in resolution:
 				# Fetching data from RRD. This should be based on smokeping setting Database		
-				data 	= fetch_rrd(file, cf, r, start_time)
+				data 	= fetch_rrd(file, cf, r, str_to_datetime(start_time), str_to_datetime(end_time))
 				# Formating data
 				rows 	= format_rows(data)
 				# Getting header row
